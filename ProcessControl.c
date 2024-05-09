@@ -216,7 +216,8 @@ int main() {
         }
         /*关机*/
         case 9: {
-            printf("**************************************\n");
+            printf("GoodProcess,LoveFromXiao\n");
+            system("cls");
             printf("再见！\n");
             return 0;
         }
