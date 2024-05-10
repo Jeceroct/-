@@ -48,7 +48,9 @@ void help() {
         printf("为存在的进程补充新的将要占用的最大资源数量：\n");
         printf("cpr (进程ID) {(占用资源编号) (占用资源数量)}\n\n");
         printf("让活动中的程序开始使用资源：\n");
-        printf("use (进程ID) {(资源编号) (资源数量)}\033[0m\n");
+        printf("use (进程ID) {(资源编号) (资源数量)}\n\n");
+        printf("清屏\n");
+        printf("clear\033[0m\n");
     }
 
 int main() {
@@ -197,6 +199,7 @@ struct ProcessControlBlock* PIDSearch(int pid) {
     return p;
 }
 
+/*打印资源列表*/
 void PrintList(int div) {
     struct ProcessControlBlock *p;
     switch (div) {
@@ -245,6 +248,7 @@ void PrintList(int div) {
     }
 }
 
+/*请求占用资源*/
 void UseRes(int pid, int Res,int Num) {
     if (Num <= NEED[pid-1][Res-1]) {
         if (Num <= AVAILABLE[Res-1]) {
@@ -252,7 +256,7 @@ void UseRes(int pid, int Res,int Num) {
             AVAILABLE[Res-1] -= Num;
             NEED[pid-1][Res-1] = MAX[pid-1][Res-1] - ALLOCATION[pid-1][Res-1];
         } else {
-            printf("资源余量不足，资源将在充足时分配给改进程\n");
+            printf("资源余量不足！\n");
             return;
         }
         
@@ -267,6 +271,7 @@ void UseRes(int pid, int Res,int Num) {
     }
 }
 
+/*银行家算法*/
 int SecurityLock(int pid, int Res,int Num) {
     int seculist[ProcessNum];
     int seculist_i;
@@ -327,6 +332,7 @@ int SecurityLock(int pid, int Res,int Num) {
     }
 }
 
+/*检测是否已拿到所有资源*/
 void IfCompelete(int pid) {
     bool comp = true;
     for (int j = 0; j < NumOfResource; j++) {
@@ -338,6 +344,7 @@ void IfCompelete(int pid) {
     }
 }
 
+/*释放完成的进程资源*/
 void KillProcess(int PID) {
     // struct ProcessControlBlock *p,*p0;
     // p0 = ProcessList;
