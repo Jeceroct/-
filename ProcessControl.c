@@ -12,7 +12,7 @@
 #define Detailed 1
 #define Curt 2
 
-struct node {
+struct ProcessControlBlock {
     int PID;        //进程标识符
     int prio;       //进程优先数
     int priolock;
@@ -21,33 +21,35 @@ struct node {
     int needtime;   //到完成还需时间
     int count;      //计数器
     int state;      //进程状态
-    struct node *next;
+    struct ProcessControlBlock *next;
 };
 
-struct node *AllList = NULL;
+struct ProcessControlBlock *ProcessList = NULL;
 int count = 0;
-int Memory[10] = {1000};  //内存
-int readymax = 5;   //最大就绪数
-int round = 2;      //默认时间片
-int infoSetting = Detailed;
-int IfKill = 1;
+int Memory[10] = {1000};     //内存
+int readymax = 5;            //最大就绪数
+int round = 2;               //默认时间片
+int infoSetting = Detailed;  //运行时显示的信息
+int IfKill = 1;              //是否销毁进程
 
-struct node* PIDSearch(int pid) {
-    struct node *p;
-    p = AllList->next;
-    while(p){
-        if(p->PID == pid) break;
-        else p = p->next;
-    }
-    return p;
-}
+/*声明自定义函数*/
+struct ProcessControlBlock* PIDSearch(int pid);
+int InitPID();
+void CreateAProcess(int prio,int round,int cputime);
+void ListOfProcess(int StateList);
+void RefreshWaitingList();
+void RefreshReadyList();
+void KillProcess(int PID);
+void RunAsRR();
+void UnlockP();
+void AddToAll(struct ProcessControlBlock *new);
 
 int main() {
     printf("**************************************\n");
     printf("模拟进程调度系统，启动！(使用动态调整优先数的时间片轮转算法)\n");
     /*进程列表初始化*/
-    AllList = (struct node*)malloc(sizeof(struct node));
-    AllList->next = NULL;
+    ProcessList = (struct ProcessControlBlock*)malloc(sizeof(struct ProcessControlBlock));
+    ProcessList->next = NULL;
 
     while(1) {
         printf("**************************************\n");
@@ -66,6 +68,7 @@ int main() {
         printf("请输入操作序号：");
         int input;
         scanf("%d",&input);
+        system("cls");
         printf("**************************************\n");
 
         switch (input) {
@@ -126,7 +129,7 @@ int main() {
         case 3:{
             printf("请输入要挂起进程的ID：");
             int PID;
-            struct node *p;
+            struct ProcessControlBlock *p;
             while(1){
                 scanf("%d",&PID);
                 p = PIDSearch(PID);
@@ -142,7 +145,7 @@ int main() {
         case 4:{
             printf("请输入要唤醒进程的ID：");
             int PID;
-            struct node *p;
+            struct ProcessControlBlock *p;
             while(1){
                 scanf("%d",&PID);
                 p = PIDSearch(PID);
@@ -158,7 +161,7 @@ int main() {
         case 5:{
             printf("请输入要销毁的进程ID：");
             int PID;
-            struct node *p;
+            struct ProcessControlBlock *p;
             while(1){
                 scanf("%d",&PID);
                 p = PIDSearch(PID);
@@ -228,9 +231,21 @@ int main() {
     }
 }
 
+/*通过pid搜索进程控制块*/
+struct ProcessControlBlock* PIDSearch(int pid) {
+    struct ProcessControlBlock *p;
+    p = ProcessList->next;
+    while(p){
+        if(p->PID == pid) break;
+        else p = p->next;
+    }
+    return p;
+}
+
+/*创建一个新的进程*/
 void CreateAProcess(int prio,int round,int cputime) {
-    struct node *p,*p0;
-    p = (struct node*)malloc(sizeof(struct node));
+    struct ProcessControlBlock *p,*p0;
+    p = (struct ProcessControlBlock*)malloc(sizeof(struct ProcessControlBlock));
     p->prio = prio;
     p->priolock = prio;
     p->round = round;
@@ -243,15 +258,17 @@ void CreateAProcess(int prio,int round,int cputime) {
     AddToAll(p);
 }
 
+/*获取一个新的进程pid*/
 int InitPID() {
     int pid = 1001;
     while(PIDSearch(pid)) pid++;
     return pid;
 }
 
-void AddToAll(struct node *new) {
-    struct node *p,*p0;
-    p = p0 = AllList;
+/*将新进程添加至进程列表末尾*/
+void AddToAll(struct ProcessControlBlock *new) {
+    struct ProcessControlBlock *p,*p0;
+    p = p0 = ProcessList;
     while(p) {
         p0 = p;
         p = p->next;
@@ -262,8 +279,9 @@ void AddToAll(struct node *new) {
     RefreshReadyList();
 }
 
+/*打印进程列表*/
 void ListOfProcess(int StateList) {
-    struct node *p;
+    struct ProcessControlBlock *p;
     RefreshReadyList();
     switch (StateList) {
         case StateReady: {
@@ -280,7 +298,7 @@ void ListOfProcess(int StateList) {
             break;
         }
         case StateRunning: {
-            p = AllList->next;
+            p = ProcessList->next;
             printf("**************************************\n");
             printf("运行列表：\n");
             if (Memory[0] != 0) {
@@ -294,7 +312,7 @@ void ListOfProcess(int StateList) {
             break;
         }
         case StateWaiting: {
-            p = AllList->next;
+            p = ProcessList->next;
             printf("**************************************\n");
             printf("等待列表：\n");
             while(p) {
@@ -310,7 +328,7 @@ void ListOfProcess(int StateList) {
             break;
         }
         case AllProcess: {
-            p = AllList->next;
+            p = ProcessList->next;
             printf("**************************************\n");
             printf("所有进程：(总数为%d)\n",count);
             while(p) {
@@ -328,14 +346,16 @@ void ListOfProcess(int StateList) {
     }
 }
 
+/*刷新等待队列*/
 void RefreshWaitingList() {
-    struct node *p = AllList->next;
+    struct ProcessControlBlock *p = ProcessList->next;
     while(p) {
         if(p->state != StateLocked) p->state = StateWaiting;
         p = p->next;
     }
 }
 
+/*刷新就绪队列*/
 void RefreshReadyList() {
     /*刷新内存*/
     for(int i = 0; i < 10; i++) {
@@ -348,12 +368,12 @@ void RefreshReadyList() {
     /*刷新进程*/
     RefreshWaitingList();
     /*加入内存*/
-    struct node *p = AllList->next;
+    struct ProcessControlBlock *p = ProcessList->next;
     for(int i = 0; i < readymax && p; i++) {
-        p = AllList->next;
+        p = ProcessList->next;
         for(int prio = 1; prio < 10; p = p->next) {
             if(!p) {
-                p = AllList->next;
+                p = ProcessList->next;
                 prio = prio + 1;
             }
             if( p->prio == prio && p->state == StateWaiting) {
@@ -365,9 +385,10 @@ void RefreshReadyList() {
     }
 }
 
+/*销毁进程*/
 void KillProcess(int PID) {
-    struct node *p,*p0;
-    p0 = AllList;
+    struct ProcessControlBlock *p,*p0;
+    p0 = ProcessList;
     p = PIDSearch(PID);
     while(p0->next != p) p0 = p0->next;
     p0->next = p->next;
@@ -376,36 +397,14 @@ void KillProcess(int PID) {
     RefreshReadyList();
 }
 
-// void RunAsPS() {
-//     printf("**************************************\n");
-//     RefreshReadyList();
-//     struct node *p;
-//     int time = 0;
-//     while(Memory[0] != 0) {
-//         p = PIDSearch(Memory[0]);
-//         printf("%d...开始：%d 优先级：%d 剩余时间：%d\n",time,p->PID,p->prio,p->needtime);
-//         p->state = StateRunning;
-//         if(p->needtime <= round) {
-//             time = time + p->needtime;
-//             printf("%d...结束：%d 优先级：%d ，已销毁\n",time,p->PID,p->prio);
-//             KillProcess(p->PID);
-//         } else {
-//             p->needtime = p->needtime - round;
-//             p->prio = p->prio + 2/p->needtime;
-//             printf("%d...暂停：%d 优先级：%d 剩余时间：%d\n",time,p->PID,p->prio,p->needtime);
-//             RefreshReadyList();
-//         }
-//     }
-//     printf("运行完成！\n");
-// }
-
+/*开始运行*/
 void RunAsRR() {
     printf("**************************************\n");
     RefreshReadyList();
-    struct node *p = AllList->next;
+    struct ProcessControlBlock *p = ProcessList->next;
     if(!p) {
         printf("无可运行的进程，请先创建进程！\n");
-        return 0;
+        return;
     }
     int time = 0;
     while(Memory[0] != 0) {
@@ -440,8 +439,9 @@ void RunAsRR() {
     UnlockP();
 }
 
+/*解锁应该被销毁但是因为设置而被锁定的进程*/
 void UnlockP() {
-    struct node *p = AllList->next;
+    struct ProcessControlBlock *p = ProcessList->next;
     while(p) {
         if(p->state == StateLocked) p->state = StateWaiting;
         p = p->next;
